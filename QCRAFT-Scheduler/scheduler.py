@@ -446,7 +446,7 @@ class Scheduler:
             # Replace all appearances of file_circuit_name, qreg, and creg
             circuit = circuit.replace(file_circuit_name+'.', 'circuit.')
             circuit = circuit.replace(f'{qreg}[', 'qreg_q[')
-            circuit = circuit.replace(f'{creg}[', 'creg_c[')
+            circuit = circuit.replace(f'{creg}[', 'meas[')
 
             # Create an array with the same length as the number of qubits initialized to 0 to count the number of gates on each qubit
             qubits = [0] * num_qubits
@@ -599,7 +599,7 @@ class Scheduler:
             # Standardize the circuit code
             circuit = circuit.replace(file_circuit_name+'.', 'circuit.')
             circuit = circuit.replace(f'{qreg}[', 'qreg_q[')
-            circuit = circuit.replace(f'{creg}[', 'creg_c[')
+            circuit = circuit.replace(f'{creg}[', 'meas[')
 
             # Calculate circuit depth
             qubits = [0] * num_qubits

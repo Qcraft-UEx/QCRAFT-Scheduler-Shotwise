@@ -14,6 +14,7 @@ import qiskit
 import numpy as np
 import re
 import threading
+from quantum_executor import QuantumExecutor
 
 class executeCircuitIBM:
     def __init__(self):
@@ -295,3 +296,70 @@ class executeCircuitIBM:
         machines = sorted(machines, key=lambda x: x.configuration().n_qubits)
         machine_names = [machine.name for machine in machines]
         return machine_names
+    
+    def runQuantumExecutor(self, machine:str, circuit:QuantumCircuit, shots:int, users:list, qubit_number:list, circuit_names:list) -> dict:
+        """
+        Executes a circuit using QuantumExecutor with thread synchronization.
+
+        Args:
+            machine (str): The machine to execute the circuit.        
+            circuit (QuantumCircuit): The circuit to execute.        
+            shots (int): The number of shots to execute the circuit.        
+            users (list): The users that executed the circuit.        
+            qubit_number (list): The number of qubits of the circuit per user.        
+            circuit_names (list): The name of the circuit that was executed per user.
+
+        Returns:
+            dict: The aggregated results of the circuit execution.
+        """
+        machines = self.get_available_machines()
+        #dispatch = {
+        #    "local_aer": ["aer_simulator", "aer_simulator"]  # Use the specified machine
+        #}
+
+        dispatch = {
+            "qiskit": machines
+        }
+
+        # Count the number of machines/executions that will be used
+        num_machines = sum(len(backends) for backends in dispatch.values())
+
+        # Wait for queue space using the thread synchronization
+        with self.condition:
+            while self.queued_jobs + num_machines > 3:
+                self.condition.wait()
+
+            # Increment queue count
+            self.queued_jobs += num_machines
+
+        try:
+            # Generate the dispatch and run
+            executor = QuantumExecutor()
+            dispatch_obj = executor.generate_dispatch(circuit, shots, dispatch)[0]
+
+            # Run the circuit
+            results = executor.run_dispatch(
+                dispatch=dispatch_obj,
+                multiprocess=False,
+                wait=True
+            )
+
+            # Process results
+            results_dict = results.get_results()
+
+            # Aggregate results
+            aggregated = {}
+            for provider, backends in results_dict.items():
+                for backend, result_list in backends.items():
+                    for result in result_list:
+                        if isinstance(result, dict) and not result.get('error'):
+                            for bit_string, count in result.items():
+                                aggregated[bit_string] = aggregated.get(bit_string, 0) + count
+
+            return aggregated
+
+        finally:
+            # Always release the queue slots, even if there was an error
+            with self.condition:
+                self.queued_jobs -= num_machines
+                self.condition.notify_all()  # Wake up all waiting threads

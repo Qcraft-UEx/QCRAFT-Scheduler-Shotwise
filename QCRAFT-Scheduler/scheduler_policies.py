@@ -83,7 +83,7 @@ class SchedulerPolicies:
             unscheduler (str): The URL of the unscheduler
         """
         self.app = app
-        self.time_limit_seconds = 15
+        self.time_limit_seconds = 10
         self.executeCircuitIBM = executeCircuitIBM()
 
         self.available_devices_ibm = ['local'] + self.executeCircuitIBM.get_available_machines()
@@ -195,7 +195,7 @@ class SchedulerPolicies:
         try:
             if provider == 'ibm':
 
-                counts = self.executeCircuitIBM.runIBM_save(machine,loc['circuit'],max(shots),[url[3] for url in urls],qb,[url[4] for url in urls])
+                counts = self.executeCircuitIBM.runQuantumExecutor(machine,loc['circuit'],max(shots),[url[3] for url in urls],qb,[url[4] for url in urls])
             else:
                 counts = runAWS_save(machine,loc['circuit'],max(shots),[url[3] for url in urls],qb,[url[4] for url in urls],'')
         except Exception as e:
@@ -262,7 +262,7 @@ class SchedulerPolicies:
                 for i, line in enumerate(lines):
                     if provider == 'ibm':
                         line = line.replace('qreg_q[', f'qreg_q[{composition_qubits}+')
-                        line = line.replace('creg_c[', f'creg_c[{composition_qubits}+')
+                        line = line.replace('meas[', f'meas[{composition_qubits}+')
                     elif provider == 'aws':
                         # In the AWS case, all elements have circuit. the integer elements in this line will be replaced by the element+composition_qubits
                         #line = re.sub(r'circuit\.(\w+)\(([\d, ]+)\)', lambda x: f'circuit.{x.group(1)}({", ".join(str(int(num)+composition_qubits) for num in x.group(2).split(","))})', line)
@@ -285,8 +285,8 @@ class SchedulerPolicies:
 
         if provider == 'ibm':
             # Add at the first position of the code[]
-            code.insert(0,"circuit = QuantumCircuit(qreg_q, creg_c)")
-            code.insert(0, f"creg_c = ClassicalRegister({composition_qubits}, 'c')")  # Set composition_qubits as the number of classical bits
+            code.insert(0,"circuit = QuantumCircuit(qreg_q, meas)")
+            code.insert(0, f"meas = ClassicalRegister({composition_qubits}, 'c')")  # Set composition_qubits as the number of classical bits
             code.insert(0, f"qreg_q = QuantumRegister({composition_qubits}, 'q')")  # Set composition_qubits as the number of classical bits
             code.insert(0,"from numpy import pi")
             code.insert(0,"import numpy as np")
