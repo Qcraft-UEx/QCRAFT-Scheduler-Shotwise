@@ -37,8 +37,8 @@ def get_ibm() -> str:
     code_array.append('from qiskit.circuit.library import MCMT, YGate, XGate, ZGate')
     code_array.append('from qiskit import QuantumRegister, ClassicalRegister, QuantumCircuit')
     code_array.append('qreg_q = QuantumRegister('+str(sum(desplazamiento))+', \'q\')')
-    code_array.append('creg_c = ClassicalRegister('+str(sum(desplazamiento))+', \'c\')')
-    code_array.append('circuit = QuantumCircuit(qreg_q, creg_c)')
+    code_array.append('meas = ClassicalRegister('+str(sum(desplazamiento))+', \'c\')')
+    code_array.append('circuit = QuantumCircuit(qreg_q, meas)')
 
     for index, circuito in enumerate(circuitos):
         despl = sum(desplazamiento[:index])
@@ -69,7 +69,7 @@ def get_ibm() -> str:
                 for i in range(len(x)):
                     gate = x[i]
                     if gate == 'Measure':
-                        code_array.append(f'circuit.measure(qreg_q[{i+despl}], creg_c[{i+despl}])')
+                        code_array.append(f'circuit.measure(qreg_q[{i+despl}], meas[{i+despl}])')
                     elif gate == 'H':
                         code_array.append(f'circuit.h(qreg_q[{i+despl}])')
                     elif gate == 'Z':
@@ -162,7 +162,7 @@ def get_ibm_individual() -> tuple:
                 for i in range(len(x)):
                     gate = x[i]
                     if gate == 'Measure':
-                        code_array.append(f'circuit.measure(qreg_q[{i+despl}], creg_c[{i+despl}])')
+                        code_array.append(f'circuit.measure(qreg_q[{i+despl}], meas[{i+despl}])')
                     elif gate == 'H':
                         code_array.append(f'circuit.h(qreg_q[{i+despl}])')
                     elif gate == 'Z':
