@@ -95,7 +95,7 @@ dispatch = {
 }
 
 executor = QuantumExecutor()
-results = executor.generate_dispatch(qiskit_circuit, [1000,1000], dispatch)
+results = executor.generate_dispatch(qiskit_circuit, 1000, dispatch)
 ```
 
 After that, the circuits are launched to the Scheduler on the selected machines

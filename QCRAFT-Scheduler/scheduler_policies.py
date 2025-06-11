@@ -83,7 +83,7 @@ class SchedulerPolicies:
             unscheduler (str): The URL of the unscheduler
         """
         self.app = app
-        self.time_limit_seconds = 10
+        self.time_limit_seconds = 90
         self.executeCircuitIBM = executeCircuitIBM()
 
         self.available_devices_ibm = ['local'] + self.executeCircuitIBM.get_available_machines()
@@ -94,7 +94,10 @@ class SchedulerPolicies:
 
         self.machine_qubits = {'ibm': {}, 'aws': {}}
         for machine in self.available_devices_ibm:
-            self.machine_qubits['ibm'][machine] = self.executeCircuitIBM.obtain_machine(self.executeCircuitIBM.load_account_ibm(), machine).configuration().n_qubits
+            if machine == 'local':
+                self.machine_qubits['ibm'][machine] = 10
+            else:
+                self.machine_qubits['ibm'][machine] = self.executeCircuitIBM.obtain_machine(self.executeCircuitIBM.load_account_ibm(), machine).configuration().n_qubits
         
         for machine in self.available_devices_aws:
             self.machine_qubits['aws'][machine] = obtain_machine_aws(machine).properties.dict()['paradigm']['qubitCount']
@@ -185,17 +188,15 @@ class SchedulerPolicies:
         circuit = ''
         for data in json.loads(data)['code']:
             circuit = circuit + data + '\n'
-        
         loc = {}
         if provider == 'ibm':
             loc['circuit'] = self.executeCircuitIBM.code_to_circuit_ibm(circuit)
         else:
             loc['circuit'] = code_to_circuit_aws(circuit)
-
         try:
             if provider == 'ibm':
 
-                counts = self.executeCircuitIBM.runQuantumExecutor(machine,loc['circuit'],max(shots),[url[3] for url in urls],qb,[url[4] for url in urls])
+                counts = self.executeCircuitIBM.runIBM_save(machine,loc['circuit'],max(shots),[url[3] for url in urls],qb,[url[4] for url in urls])
             else:
                 counts = runAWS_save(machine,loc['circuit'],max(shots),[url[3] for url in urls],qb,[url[4] for url in urls],'')
         except Exception as e:

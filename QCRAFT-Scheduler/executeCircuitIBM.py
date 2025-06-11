@@ -14,6 +14,7 @@ import qiskit
 import numpy as np
 import re
 import threading
+from autoscheduler import Autoscheduler
 from quantum_executor import QuantumExecutor
 
 class executeCircuitIBM:
@@ -218,68 +219,79 @@ class executeCircuitIBM:
         Returns:
             dict: The results of the circuit execution.
         """
-
-        if machine == "local":
-            backend = AerSimulator()
-            x = int(shots)
-            job = backend.run(circuit, shots=x)
-            result = job.result()
-            counts = result.get_counts()
-            return counts
-        else:
-            # Load your IBM Quantum account
-
-            service = self.service
-            backend = service.backend(machine)
-            sampler = Sampler(mode=backend)
-            #sampler.options.execution.rep_delay = 0.5 # set it to the maximum of the machine instead -> config.rep_delay_range[1]
-            with self.transpile_lock:
-                qc_basis = transpile(circuit, backend=backend)
-            x = int(shots)
-
+        if(self.can_autoschedule(circuit, machine)):
+            autoscheduler = Autoscheduler()
             while True:
                 with self.condition:   
                     if self.queued_jobs < 3:
                         self.queued_jobs += 1
-                        job = sampler.run([qc_basis], shots=x)
                         break
                     else:
                         self.condition.wait()
 
+            try: 
+                results = autoscheduler.schedule_and_execute(circuit, shots, machine) 
+                return results
+            
+            finally:
+                # Always release the queue slot
+                with self.condition:
+                    self.queued_jobs -= 1
+                    self.condition.notify()
+            
+        else:
 
-            # -----------------------------------------------------#
-            id = job.job_id() # Get the job id
-            provider = 'ibm'
-            user_shots = [shots] * len(circuit_names)
-            script_dir = os.path.dirname(os.path.realpath(__file__))
-            ids_file = os.path.join(script_dir, 'ids.txt')  # create the path to the results file in the script's directory
-            with open(ids_file, 'a') as file:
-                file.write(json.dumps({id:(users,qubit_number, user_shots, provider, circuit_names)}))
-                file.write('\n')
-            # Write the id in a file, along with the users, and their qubit numbers
-            # -----------------------------------------------------#
-
-            result = job.result()
-            counts = result[0].data.meas.get_counts()
-
-            with self.condition:
-                self.queued_jobs -= 1
-                self.condition.notify()
-
-            # -----------------------------------------------------#
-
-            #Seach for the id in the file and delete the line
-            with open(ids_file, 'r') as file:
-                lines = file.readlines()
-            with open(ids_file, 'w') as file:
-                for line in lines:
-                    line_dict = json.loads(line.strip())
-                    if list(line_dict.keys())[0] != id:
-                        file.write(line)
-
-            # -----------------------------------------------------#
-
-            return counts
+            if machine == "local":
+                backend = AerSimulator()
+                x = int(shots)
+                job = backend.run(circuit, shots=x)
+                result = job.result()
+                counts = result.get_counts()
+                return counts
+            else:
+                # Load your IBM Quantum account
+                service = self.service
+                backend =  service.backend(machine)
+                sampler = Sampler(mode=backend)
+                #sampler.options.execution.rep_delay = 0.5 # set it to the maximum of the machine instead -> config.rep_delay_range[1]
+                with self.transpile_lock:
+                    qc_basis = transpile(circuit, backend=backend)
+                x = int(shots)
+                while True:
+                    with self.condition:   
+                        if self.queued_jobs < 3:
+                            self.queued_jobs += 1
+                            job = sampler.run([qc_basis], shots=x)
+                            break
+                        else:
+                            self.condition.wait()
+                # -----------------------------------------------------#
+                id = job.job_id() # Get the job id
+                provider = 'ibm'
+                user_shots = [shots] * len(circuit_names)
+                script_dir = os.path.dirname(os.path.realpath(__file__))
+                ids_file = os.path.join(script_dir, 'ids.txt')  # create the path to the results file in the script's directory
+                with open(ids_file, 'a') as file:
+                    file.write(json.dumps({id:(users,qubit_number, user_shots, provider, circuit_names)}))
+                    file.write('\n')
+                # Write the id in a file, along with the users, and their qubit numbers
+                # -----------------------------------------------------#
+                result = job.result()
+                counts = result[0].data.meas.get_counts()
+                with self.condition:
+                    self.queued_jobs -= 1
+                    self.condition.notify()
+                # -----------------------------------------------------#
+                #Seach for the id in the file and delete the line
+                with open(ids_file, 'r') as file:
+                    lines = file.readlines()
+                with open(ids_file, 'w') as file:
+                    for line in lines:
+                        line_dict = json.loads(line.strip())
+                        if list(line_dict.keys())[0] != id:
+                            file.write(line)
+                # -----------------------------------------------------#
+                return counts
 
     def get_available_machines(self) -> list:
         """
@@ -296,19 +308,41 @@ class executeCircuitIBM:
         machines = sorted(machines, key=lambda x: x.configuration().n_qubits)
         machine_names = [machine.name for machine in machines]
         return machine_names
+
+    def can_autoschedule(self, circuit:QuantumCircuit ,machine:str) -> bool:
+        """
+        Checks if the circuit can be autoscheduled.
+
+        Args:
+            circuit (QuantumCircuit): The circuit to check.        
+            machine (str): The machine to check.
+
+        Returns:
+            bool: True if the circuit can be autoscheduled, False otherwise.
+        """
+        # Get the backend from the name
+        backend = self.obtain_machine(self.service, machine)
+        # Get the number of qubits in the backend
+        num_qubits = backend.configuration().n_qubits
+        # Check if the circuit has more qubits than the backend
+        if num_qubits >= circuit.num_qubits*2:
+            return True
+        else:
+            return False
+        
     
     def runQuantumExecutor(self, machine:str, circuit:QuantumCircuit, shots:int, users:list, qubit_number:list, circuit_names:list) -> dict:
         """
         Executes a circuit using QuantumExecutor with thread synchronization.
-
+    
         Args:
-            machine (str): The machine to execute the circuit.        
-            circuit (QuantumCircuit): The circuit to execute.        
+            machine (str): The machine to execute the circuit.
+            circuit (QuantumCircuit): The circuit to execute.
             shots (int): The number of shots to execute the circuit.        
             users (list): The users that executed the circuit.        
             qubit_number (list): The number of qubits of the circuit per user.        
             circuit_names (list): The name of the circuit that was executed per user.
-
+    
         Returns:
             dict: The aggregated results of the circuit execution.
         """
@@ -316,37 +350,37 @@ class executeCircuitIBM:
         #dispatch = {
         #    "local_aer": ["aer_simulator", "aer_simulator"]  # Use the specified machine
         #}
-
+    
         dispatch = {
             "qiskit": machines
         }
-
+    
         # Count the number of machines/executions that will be used
         num_machines = sum(len(backends) for backends in dispatch.values())
-
+    
         # Wait for queue space using the thread synchronization
         with self.condition:
             while self.queued_jobs + num_machines > 3:
                 self.condition.wait()
-
+    
             # Increment queue count
             self.queued_jobs += num_machines
-
+    
         try:
             # Generate the dispatch and run
             executor = QuantumExecutor()
             dispatch_obj = executor.generate_dispatch(circuit, shots, dispatch)[0]
-
+    
             # Run the circuit
             results = executor.run_dispatch(
                 dispatch=dispatch_obj,
                 multiprocess=False,
                 wait=True
             )
-
+    
             # Process results
             results_dict = results.get_results()
-
+    
             # Aggregate results
             aggregated = {}
             for provider, backends in results_dict.items():
@@ -355,9 +389,9 @@ class executeCircuitIBM:
                         if isinstance(result, dict) and not result.get('error'):
                             for bit_string, count in result.items():
                                 aggregated[bit_string] = aggregated.get(bit_string, 0) + count
-
+    
             return aggregated
-
+    
         finally:
             # Always release the queue slots, even if there was an error
             with self.condition:
